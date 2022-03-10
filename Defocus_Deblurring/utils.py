@@ -29,10 +29,19 @@ def SSIM(img1, img2):
     return metrics.structural_similarity(img1, img2, data_range=1, multichannel=True)
 
 def load_img(filepath):
-    return cv2.cvtColor(cv2.imread(filepath), cv2.COLOR_BGR2RGB)
+    src = cv2.imread(filepath)
+    # cv2.imshow('OriginalPicture', src)
+
+    x, y = src.shape[0:2]
+    dst = cv2.resize(src, (512, 512))
+    # cv2.imshow('OriginalPicture', dst)
+    # cv2.waitKey()
+
+    return cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
 
 def load_img16(filepath):
     return cv2.cvtColor(cv2.imread(filepath, -1), cv2.COLOR_BGR2RGB)
 
 def save_img(filepath, img):
+    # cv2.imshow('Destion', img)
     cv2.imwrite(filepath,cv2.cvtColor(img, cv2.COLOR_RGB2BGR))

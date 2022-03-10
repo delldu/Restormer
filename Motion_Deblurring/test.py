@@ -44,6 +44,7 @@ result_dir  = os.path.join(args.result_dir, dataset)
 os.makedirs(result_dir, exist_ok=True)
 
 inp_dir = os.path.join(args.input_dir, 'test', dataset, 'input')
+
 files = natsorted(glob(os.path.join(inp_dir, '*.png')) + glob(os.path.join(inp_dir, '*.jpg')))
 with torch.no_grad():
     for file_ in tqdm(files):

@@ -78,7 +78,13 @@ def ssim(img1, img2):
     return ssim_map.mean()
 
 def load_img(filepath):
-    return cv2.cvtColor(cv2.imread(filepath), cv2.COLOR_BGR2RGB)
+    src = cv2.imread(filepath)
+    # cv2.imshow('OriginalPicture', src)
+
+    x, y = src.shape[0:2]
+    dst = cv2.resize(src, (512, 512))
+    
+    return cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
 
 def save_img(filepath, img):
     cv2.imwrite(filepath,cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
