@@ -22,11 +22,20 @@ from . import restormer
 
 import pdb
 
-DEFOCUS_ZEROPAD_TIMES = 4
-# DENOISE_ZEROPAD_TIMES = 8
+DEFOCUS_ZEROPAD_TIMES = 8
+DENOISE_ZEROPAD_TIMES = 8
 
 DERAIN_ZEROPAD_TIMES = 8
 DEBLUR_ZEROPAD_TIMES = 8
+
+def model_load(model, model_path):
+    """Create model."""
+
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+    state = torch.load(checkpoint)
+    model.load_state_dict(state['params'])
+
 
 def model_forward(model, device, input_tensor, multi_times):
     # zeropad for model
@@ -34,21 +43,15 @@ def model_forward(model, device, input_tensor, multi_times):
     if H % multi_times != 0 or W % multi_times != 0:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
     output_tensor = todos.model.forward(model, device, input_tensor)
-    return output_tensor[:, :, 0:4*H, 0:4*W]
+    return output_tensor[:, :, 0:H, 0:W]
 
 
 def get_defocus_model():
     """Create model."""
 
     device = todos.model.get_device()
-
-    model_path = "models/image_defocus.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     model = restormer.Restormer()
-    state = torch.load(checkpoint)
-    model.load_state_dict(state['params'])
+    model_load(model, "models/image_defocus.pth")
 
     model = model.to(device)
     model.eval()
@@ -67,16 +70,8 @@ def get_denoise_model():
     """Create model."""
 
     device = todos.model.get_device()
-
-    model_path = "models/image_denoise.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     model = restormer.Restormer(LayerNorm_type='BiasFree')
-    # todos.model.load(model, checkpoint)
-    state = torch.load(checkpoint)
-    model.load_state_dict(state['params'])
-
+    model_load(model, "models/image_denoise.pth")
     model = model.to(device)
     model.eval()
 
@@ -92,16 +87,8 @@ def get_deblur_model():
     """Create model."""
 
     device = todos.model.get_device()
-
-    model_path = "models/image_deblur.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     model = restormer.Restormer()
-    # todos.model.load(model, checkpoint)
-    state = torch.load(checkpoint)
-    model.load_state_dict(state['params'])
-
+    model_load(model, "models/image_deblur.pth")
     model = model.to(device)
     model.eval()
 
@@ -116,19 +103,8 @@ def get_derain_model():
     """Create model."""
 
     device = todos.model.get_device()
-
-    model_path = "models/image_derain.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     model = restormer.Restormer()
-    # todos.model.load(model, checkpoint)
-    state = torch.load(checkpoint)
-
-    # pdb.set_trace()
-
-    model.load_state_dict(state['params'])
-
+    model_load(model, "models/image_derain.pth")
     model = model.to(device)
     model.eval()
 
@@ -156,7 +132,7 @@ def defocus_server(name, host="localhost", port=6379):
     model, device = get_defocus_model()
 
     def do_service(input_file, output_file, targ):
-        print(f"  clean {input_file} ...")
+        print(f"  defocus {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
             output_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
@@ -188,7 +164,7 @@ def defocus_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = todos.model.forward(model, device, input_tensor)
+        predict_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -210,10 +186,10 @@ def denoise_server(name, host="localhost", port=6379):
     model, device = get_denoise_model()
 
     def do_service(input_file, output_file, targ):
-        print(f"  clean {input_file} ...")
+        print(f"  denoise {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
-            output_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
+            output_tensor = model_forward(model, device, input_tensor, DENOISE_ZEROPAD_TIMES)
             todos.data.save_tensor(output_tensor, output_file)
             return True
         except Exception as e:
@@ -242,7 +218,7 @@ def denoise_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor, DERAIN_ZEROPAD_TIMES)
+        predict_tensor = model_forward(model, device, input_tensor, DENOISE_ZEROPAD_TIMES)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -263,7 +239,7 @@ def deblur_server(name, host="localhost", port=6379):
     model, device = get_deblur_model()
 
     def do_service(input_file, output_file, targ):
-        print(f"  clean {input_file} ...")
+        print(f"  deblur {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
             output_tensor = model_forward(model, device, input_tensor, DEBLUR_ZEROPAD_TIMES)
@@ -317,7 +293,7 @@ def derain_server(name, host="localhost", port=6379):
     model, device = get_derain_model()
 
     def do_service(input_file, output_file, targ):
-        print(f"  clean {input_file} ...")
+        print(f"  derain {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
             output_tensor = model_forward(model, device, input_tensor, DERAIN_ZEROPAD_TIMES)            
