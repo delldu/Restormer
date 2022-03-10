@@ -2,13 +2,14 @@
 ## Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, and Ming-Hsuan Yang
 ## https://arxiv.org/abs/2111.09881
 
+import pdb
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numbers
 
-from einops import rearrange
+# from einops import rearrange
 from einops.layers.torch import Rearrange
 
 
@@ -111,15 +112,24 @@ class Attention(nn.Module):
         self.qkv_dwconv = nn.Conv2d(dim * 3, dim * 3, kernel_size=3, stride=1, padding=1, groups=dim * 3, bias=bias)
         self.project_out = nn.Conv2d(dim, dim, kernel_size=1, bias=bias)
 
+        self.Q = Rearrange("b (head c) h w -> b head c (h w)", head=self.num_heads)
+        self.K = Rearrange("b (head c) h w -> b head c (h w)", head=self.num_heads)
+        self.V = Rearrange("b (head c) h w -> b head c (h w)", head=self.num_heads)
+
+        self.O = Rearrange("b head c h w -> b (head c) h w")
+
     def forward(self, x):
         b, c, h, w = x.shape
 
         qkv = self.qkv_dwconv(self.qkv(x))
         q, k, v = qkv.chunk(3, dim=1)
 
-        q = rearrange(q, "b (head c) h w -> b head c (h w)", head=self.num_heads)
-        k = rearrange(k, "b (head c) h w -> b head c (h w)", head=self.num_heads)
-        v = rearrange(v, "b (head c) h w -> b head c (h w)", head=self.num_heads)
+        # q = rearrange(q, "b (head c) h w -> b head c (h w)", head=self.num_heads)
+        # k = rearrange(k, "b (head c) h w -> b head c (h w)", head=self.num_heads)
+        # v = rearrange(v, "b (head c) h w -> b head c (h w)", head=self.num_heads)
+        q = self.Q(q)
+        k = self.K(k)
+        v = self.V(v)
 
         q = F.normalize(q, dim=-1)
         k = F.normalize(k, dim=-1)
@@ -129,7 +139,11 @@ class Attention(nn.Module):
 
         out = attn @ v
 
-        out = rearrange(out, "b head c (h w) -> b (head c) h w", head=self.num_heads, h=h, w=w)
+        # pdb.set_trace()
+
+        # out = rearrange(out, "b head c (h w) -> b (head c) h w", head=self.num_heads, h=h, w=w)
+        out = out.reshape(out.shape[0], out.shape[1], out.shape[2], h, w)
+        out = self.O(out)
 
         out = self.project_out(out)
         return out
@@ -330,6 +344,8 @@ class Restormer(nn.Module):
         self.dual_pixel_task = dual_pixel_task
         if self.dual_pixel_task:
             self.skip_conv = nn.Conv2d(dim, int(dim * 2**1), kernel_size=1, bias=bias)
+        else:
+            self.skip_conv = nn.Identity() # Fake skip_conv for script compile
         ###########################
 
         self.output = nn.Conv2d(int(dim * 2**1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)

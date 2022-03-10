@@ -56,12 +56,12 @@ def get_defocus_model():
     model = model.to(device)
     model.eval()
 
-    # model = torch.jit.script(model)
-    # pdb.set_trace()
+    model = torch.jit.script(model)
+    model = torch.jit.freeze(model)
 
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_defocus.torch"):
-    #     model.save("output/image_defocus.torch")
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_defocus.torch"):
+        model.save("output/image_defocus.torch")
 
     return model, device
 
@@ -75,10 +75,12 @@ def get_denoise_model():
     model = model.to(device)
     model.eval()
 
-    # model = torch.jit.script(model)
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_denoise.torch"):
-    #     model.save("output/image_denoise.torch")
+    model = torch.jit.script(model)
+    model = torch.jit.freeze(model)
+
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_denoise.torch"):
+        model.save("output/image_denoise.torch")
 
     return model, device
 
@@ -92,10 +94,12 @@ def get_deblur_model():
     model = model.to(device)
     model.eval()
 
-    # model = torch.jit.script(model)
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_deblur.torch"):
-    #     model.save("output/image_deblur.torch")
+    model = torch.jit.script(model)
+    model = torch.jit.freeze(model)
+
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_deblur.torch"):
+        model.save("output/image_deblur.torch")
 
     return model, device
 
@@ -108,10 +112,12 @@ def get_derain_model():
     model = model.to(device)
     model.eval()
 
-    # model = torch.jit.script(model)
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_derain.torch"):
-    #     model.save("output/image_derain.torch")
+    model = torch.jit.script(model)
+    model = torch.jit.freeze(model)
+    
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_derain.torch"):
+        model.save("output/image_derain.torch")
 
     return model, device
 
