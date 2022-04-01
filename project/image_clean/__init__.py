@@ -57,7 +57,7 @@ def get_defocus_model():
     model.eval()
 
     model = torch.jit.script(model)
-    model = torch.jit.freeze(model)
+    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_defocus.torch"):
@@ -76,7 +76,7 @@ def get_denoise_model():
     model.eval()
 
     model = torch.jit.script(model)
-    model = torch.jit.freeze(model)
+    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_denoise.torch"):
@@ -95,7 +95,7 @@ def get_deblur_model():
     model.eval()
 
     model = torch.jit.script(model)
-    model = torch.jit.freeze(model)
+    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_deblur.torch"):
@@ -113,7 +113,7 @@ def get_derain_model():
     model.eval()
 
     model = torch.jit.script(model)
-    model = torch.jit.freeze(model)
+    # model = torch.jit.freeze(model)
     
     todos.data.mkdir("output")
     if not os.path.exists("output/image_derain.torch"):
