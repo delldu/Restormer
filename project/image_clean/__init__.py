@@ -14,7 +14,7 @@ __version__ = "1.0.0"
 import os
 from tqdm import tqdm
 import torch
-
+import time
 import redos
 import todos
 
@@ -52,12 +52,10 @@ def get_defocus_model():
     device = todos.model.get_device()
     model = restormer.Restormer()
     model_load(model, "models/image_defocus.pth")
-
     model = model.to(device)
     model.eval()
 
     model = torch.jit.script(model)
-    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_defocus.torch"):
@@ -76,7 +74,6 @@ def get_denoise_model():
     model.eval()
 
     model = torch.jit.script(model)
-    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_denoise.torch"):
@@ -95,7 +92,6 @@ def get_deblur_model():
     model.eval()
 
     model = torch.jit.script(model)
-    # model = torch.jit.freeze(model)
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_deblur.torch"):
@@ -113,8 +109,7 @@ def get_derain_model():
     model.eval()
 
     model = torch.jit.script(model)
-    # model = torch.jit.freeze(model)
-    
+
     todos.data.mkdir("output")
     if not os.path.exists("output/image_derain.torch"):
         model.save("output/image_derain.torch")
@@ -170,7 +165,15 @@ def defocus_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
+        start_time = time.time()
+
+        torch.cuda.synchronize()
+        with torch.jit.optimized_execution(False):
+            predict_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
+        torch.cuda.synchronize()
+
+        print(f"Defocus {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
+
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -224,7 +227,13 @@ def denoise_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor, DENOISE_ZEROPAD_TIMES)
+        start_time = time.time()
+
+        with torch.jit.optimized_execution(False):
+            predict_tensor = model_forward(model, device, input_tensor, DENOISE_ZEROPAD_TIMES)
+        torch.cuda.synchronize()
+
+        print(f"Denoise {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -277,7 +286,15 @@ def deblur_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor, DEBLUR_ZEROPAD_TIMES)
+        start_time = time.time()
+
+        torch.cuda.synchronize()
+        with torch.jit.optimized_execution(False):
+            predict_tensor = model_forward(model, device, input_tensor, DEBLUR_ZEROPAD_TIMES)
+        torch.cuda.synchronize()
+
+        print(f"Deblur {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
+
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -331,7 +348,15 @@ def derain_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        predict_tensor = model_forward(model, device, input_tensor, DERAIN_ZEROPAD_TIMES)
+        start_time = time.time()
+
+        torch.cuda.synchronize()
+        with torch.jit.optimized_execution(False):
+            predict_tensor = model_forward(model, device, input_tensor, DERAIN_ZEROPAD_TIMES)
+        torch.cuda.synchronize()
+
+        print(f"Derain {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
+
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)

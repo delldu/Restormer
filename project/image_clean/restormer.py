@@ -350,6 +350,8 @@ class Restormer(nn.Module):
 
         self.output = nn.Conv2d(int(dim * 2**1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
+        # pdb.set_trace()
+        
     def forward(self, inp_img):
 
         inp_enc_level1 = self.patch_embed(inp_img)
@@ -388,4 +390,4 @@ class Restormer(nn.Module):
         else:
             out_dec_level1 = self.output(out_dec_level1) + inp_img
 
-        return out_dec_level1
+        return out_dec_level1.clamp(0.0, 1.0)
