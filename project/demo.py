@@ -14,4 +14,4 @@ image_clean.deblur_predict("images/deblur/*.png", "output/deblur")
 
 # image_clean.derain_client("TAI", "images/derain/*.png", "output/derain")
 # image_clean.derain_server("TAI")
-image_clean.derain_predict("images/derain/1*.png", "output/derain")
+image_clean.derain_predict("images/derain/*.png", "output/derain")
