@@ -14,7 +14,6 @@ __version__ = "1.0.0"
 import os
 from tqdm import tqdm
 import torch
-import time
 import redos
 import todos
 
@@ -28,14 +27,6 @@ DEBLUR_ZEROPAD_TIMES = 8
 
 DERAIN_ZEROPAD_TIMES = 8
 
-def model_load(model, model_path):
-    """Create model."""
-
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-    state = torch.load(checkpoint)
-    model.load_state_dict(state['params'])
-
 
 def model_forward(model, device, input_tensor, multi_times):
     # zeropad for model
@@ -43,20 +34,20 @@ def model_forward(model, device, input_tensor, multi_times):
     if H % multi_times != 0 or W % multi_times != 0:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
 
-    torch.cuda.synchronize()
-    with torch.jit.optimized_execution(False):
-        output_tensor = todos.model.forward(model, device, input_tensor)
-    torch.cuda.synchronize()
+    output_tensor = todos.model.forward(model, device, input_tensor)
 
     return output_tensor[:, :, 0:H, 0:W]
 
 
 def get_defocus_model():
     """Create model."""
+    model_path = "models/image_defocus.pth"
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
     device = todos.model.get_device()
     model = restormer.Restormer()
-    model_load(model, "models/image_defocus.pth")
+    todos.model.load(model, checkpoint, key="params")
     model = model.to(device)
     model.eval()
 
@@ -72,10 +63,13 @@ def get_defocus_model():
 
 def get_denoise_model():
     """Create model."""
+    model_path = "models/image_denoise.pth"
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
     device = todos.model.get_device()
     model = restormer.Restormer(LayerNorm_type='BiasFree')
-    model_load(model, "models/image_denoise.pth")
+    todos.model.load(model, checkpoint, key="params")
     model = model.to(device)
     model.eval()
 
@@ -91,10 +85,13 @@ def get_denoise_model():
 
 def get_deblur_model():
     """Create model."""
+    model_path = "models/image_deblur.pth"
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
     device = todos.model.get_device()
     model = restormer.Restormer()
-    model_load(model, "models/image_deblur.pth")
+    todos.model.load(model, checkpoint, key="params")
     model = model.to(device)
     model.eval()
 
@@ -109,10 +106,13 @@ def get_deblur_model():
 
 def get_derain_model():
     """Create model."""
+    model_path = "models/image_derain.pth"
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
     device = todos.model.get_device()
     model = restormer.Restormer()
-    model_load(model, "models/image_derain.pth")
+    todos.model.load(model, checkpoint, key="params")
     model = model.to(device)
     model.eval()
 
@@ -174,11 +174,8 @@ def defocus_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        start_time = time.time()
 
         predict_tensor = model_forward(model, device, input_tensor, DEFOCUS_ZEROPAD_TIMES)
-
-        print(f"Defocus {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
 
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
@@ -233,11 +230,9 @@ def denoise_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        start_time = time.time()
 
         predict_tensor = model_forward(model, device, input_tensor, DENOISE_ZEROPAD_TIMES)
 
-        print(f"Denoise {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
@@ -291,11 +286,8 @@ def deblur_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        start_time = time.time()
 
         predict_tensor = model_forward(model, device, input_tensor, DEBLUR_ZEROPAD_TIMES)
-
-        print(f"Deblur {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
 
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
@@ -351,11 +343,8 @@ def derain_predict(input_files, output_dir):
         input_tensor = todos.data.load_tensor(filename)
         # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
-        start_time = time.time()
 
         predict_tensor = model_forward(model, device, input_tensor, DERAIN_ZEROPAD_TIMES)
-
-        print(f"Derain {filename} on {device} spend {time.time() - start_time:.4f} seconds.")
 
         output_file = f"{output_dir}/{os.path.basename(filename)}"
 
