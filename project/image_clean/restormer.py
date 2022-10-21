@@ -4,6 +4,7 @@
 
 import pdb
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -63,9 +64,9 @@ class LayerNorm(nn.Module):
 
     def forward(self, x):
         h, w = x.shape[-2:]
-        x = self.BxCxHxW_BxHWxC(x) # "B C H W -> B (H W) C"
+        x = self.BxCxHxW_BxHWxC(x)  # "B C H W -> B (H W) C"
         x = self.body(x)
-        x = self.BxHWxC_BxCxHW(x) # "B HW C -> B C HW"
+        x = self.BxHWxC_BxCxHW(x)  # "B HW C -> B C HW"
         # ("b (h w) c -> b c h w", h=h, w=w)
         return x.view(x.shape[0], x.shape[1], h, w)
 
@@ -244,7 +245,7 @@ class Restormer(nn.Module):
         self.encoder_level2 = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**1),
+                    dim=int(dim * 2 ** 1),
                     num_heads=heads[1],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -254,11 +255,11 @@ class Restormer(nn.Module):
             ]
         )
 
-        self.down2_3 = Downsample(int(dim * 2**1))  ## From Level 2 to Level 3
+        self.down2_3 = Downsample(int(dim * 2 ** 1))  ## From Level 2 to Level 3
         self.encoder_level3 = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**2),
+                    dim=int(dim * 2 ** 2),
                     num_heads=heads[2],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -268,11 +269,11 @@ class Restormer(nn.Module):
             ]
         )
 
-        self.down3_4 = Downsample(int(dim * 2**2))  ## From Level 3 to Level 4
+        self.down3_4 = Downsample(int(dim * 2 ** 2))  ## From Level 3 to Level 4
         self.latent = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**3),
+                    dim=int(dim * 2 ** 3),
                     num_heads=heads[3],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -282,12 +283,12 @@ class Restormer(nn.Module):
             ]
         )
 
-        self.up4_3 = Upsample(int(dim * 2**3))  ## From Level 4 to Level 3
-        self.reduce_chan_level3 = nn.Conv2d(int(dim * 2**3), int(dim * 2**2), kernel_size=1, bias=bias)
+        self.up4_3 = Upsample(int(dim * 2 ** 3))  ## From Level 4 to Level 3
+        self.reduce_chan_level3 = nn.Conv2d(int(dim * 2 ** 3), int(dim * 2 ** 2), kernel_size=1, bias=bias)
         self.decoder_level3 = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**2),
+                    dim=int(dim * 2 ** 2),
                     num_heads=heads[2],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -297,12 +298,12 @@ class Restormer(nn.Module):
             ]
         )
 
-        self.up3_2 = Upsample(int(dim * 2**2))  ## From Level 3 to Level 2
-        self.reduce_chan_level2 = nn.Conv2d(int(dim * 2**2), int(dim * 2**1), kernel_size=1, bias=bias)
+        self.up3_2 = Upsample(int(dim * 2 ** 2))  ## From Level 3 to Level 2
+        self.reduce_chan_level2 = nn.Conv2d(int(dim * 2 ** 2), int(dim * 2 ** 1), kernel_size=1, bias=bias)
         self.decoder_level2 = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**1),
+                    dim=int(dim * 2 ** 1),
                     num_heads=heads[1],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -312,12 +313,12 @@ class Restormer(nn.Module):
             ]
         )
 
-        self.up2_1 = Upsample(int(dim * 2**1))  ## From Level 2 to Level 1  (NO 1x1 conv to reduce channels)
+        self.up2_1 = Upsample(int(dim * 2 ** 1))  ## From Level 2 to Level 1  (NO 1x1 conv to reduce channels)
 
         self.decoder_level1 = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**1),
+                    dim=int(dim * 2 ** 1),
                     num_heads=heads[0],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -330,7 +331,7 @@ class Restormer(nn.Module):
         self.refinement = nn.Sequential(
             *[
                 TransformerBlock(
-                    dim=int(dim * 2**1),
+                    dim=int(dim * 2 ** 1),
                     num_heads=heads[0],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
@@ -343,16 +344,16 @@ class Restormer(nn.Module):
         #### For Dual-Pixel Defocus Deblurring Task ####
         self.dual_pixel_task = dual_pixel_task
         if self.dual_pixel_task:
-            self.skip_conv = nn.Conv2d(dim, int(dim * 2**1), kernel_size=1, bias=bias)
+            self.skip_conv = nn.Conv2d(dim, int(dim * 2 ** 1), kernel_size=1, bias=bias)
         else:
-            self.skip_conv = nn.Identity() # Fake skip_conv for script compile
+            self.skip_conv = nn.Identity()  # Fake skip_conv for script compile
         ###########################
 
-        self.output = nn.Conv2d(int(dim * 2**1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        self.output = nn.Conv2d(int(dim * 2 ** 1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
         # pdb.set_trace()
-        
-    def forward(self, inp_img):
+
+    def forward_x(self, inp_img):
 
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
@@ -391,3 +392,39 @@ class Restormer(nn.Module):
             out_dec_level1 = self.output(out_dec_level1) + inp_img
 
         return out_dec_level1.clamp(0.0, 1.0)
+
+    def forward(self, x):
+        # Define max GPU/CPU memory -- 8G
+        max_h = 1024
+        max_W = 1024
+        multi_times = 8
+
+        # Need Resize ?
+        B, C, H, W = x.size()
+        if H > max_h or W > max_W:
+            s = min(max_h / H, max_W / W)
+            SH, SW = int(s * H), int(s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
+        else:
+            resize_x = x
+
+        # Need Zero Pad ?
+        ZH, ZW = resize_x.size(2), resize_x.size(3)
+        if ZH % multi_times != 0 or ZW % multi_times != 0:
+            NH = multi_times * math.ceil(ZH / multi_times)
+            NW = multi_times * math.ceil(ZW / multi_times)
+            resize_zeropad_x = resize_x.new_zeros(B, C, NH, NW)
+            resize_zeropad_x[:, :, 0:ZH, 0:ZW] = resize_x
+        else:
+            resize_zeropad_x = resize_x
+
+        # MS Begin
+        y = self.forward_x(resize_zeropad_x)
+        del resize_zeropad_x, resize_x  # Release memory !!!
+
+        y = y[:, :, 0:ZH, 0:ZW]  # Remove Zero Pads
+        if ZH != H or ZW != W:
+            y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)
+        # MS End
+
+        return y
