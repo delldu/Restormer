@@ -20,7 +20,7 @@ import image_clean
 from tqdm import tqdm
 
 if __name__ == "__main__":
-    model, device = image_clean.get_defocus_model()  # get_denoise_model()
+    model, device = image_clean.get_denoise_model()
 
     N = 100
     B, C, H, W = 1, 3, 1024, 1024
@@ -33,16 +33,13 @@ if __name__ == "__main__":
         h = random.randint(0, 32)
         w = random.randint(0, 32)
         x = torch.randn(B, C, H + h, W + w)
-
-        try:
-            start_time = time.time()
-            with torch.jit.optimized_execution(False):
-                with torch.no_grad():
-                    y = model(x.to(device))
-            torch.cuda.synchronize()
-            mean_time += time.time() - start_time
-        except:
-            print("x: ", x.size())
+        # print("x: ", x.size())
+        start_time = time.time()
+        with torch.jit.optimized_execution(False):
+            with torch.no_grad():
+                y = model(x.to(device))
+        torch.cuda.synchronize()
+        mean_time += time.time() - start_time
 
     mean_time /= N
     print(f"Mean spend {mean_time:0.4f} seconds")

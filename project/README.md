@@ -10,6 +10,7 @@ Image clean package 1.0.0
     ```
     python tvmdemo.py
     ```
+    # The following operators are not implemented: ['aten::pixel_unshuffle']
 
 #### 2) Bad Performance
     ```
