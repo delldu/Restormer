@@ -3,8 +3,8 @@
 ## https://arxiv.org/abs/2111.09881
 
 import pdb
+import os
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -223,7 +223,6 @@ class Restormer(nn.Module):
         LayerNorm_type="WithBias",  ## Other option 'BiasFree'
         dual_pixel_task=False,  ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
     ):
-
         super(Restormer, self).__init__()
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
@@ -351,10 +350,15 @@ class Restormer(nn.Module):
 
         self.output = nn.Conv2d(int(dim * 2 ** 1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
-        # pdb.set_trace()
+    def load_weights(self, model_path):
+        cdir = os.path.dirname(__file__)
+        checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+        state = torch.load(checkpoint)
+        if "params" in state:
+            state = state["params"]
+        self.load_state_dict(state)
 
-    def forward_x(self, inp_img):
-
+    def forward(self, inp_img):
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
 
@@ -387,11 +391,17 @@ class Restormer(nn.Module):
         if self.dual_pixel_task:
             out_dec_level1 = out_dec_level1 + self.skip_conv(inp_enc_level1)
             out_dec_level1 = self.output(out_dec_level1)
-        ###########################
         else:
             out_dec_level1 = self.output(out_dec_level1) + inp_img
 
         return out_dec_level1.clamp(0.0, 1.0)
+
+
+class DeblurModel(nn.Module):
+    def __init__(self):
+        super(DeblurModel, self).__init__()
+        self.base_model = Restormer()
+        self.base_model.load_weights("models/image_deblur.pth")
 
     def forward(self, x):
         # Define max GPU/CPU memory -- 8G
@@ -408,23 +418,132 @@ class Restormer(nn.Module):
         else:
             resize_x = x
 
-        # Need Zero Pad ?
-        ZH, ZW = resize_x.size(2), resize_x.size(3)
-        if ZH % multi_times != 0 or ZW % multi_times != 0:
-            NH = multi_times * math.ceil(ZH / multi_times)
-            NW = multi_times * math.ceil(ZW / multi_times)
-            resize_zeropad_x = resize_x.new_zeros(B, C, NH, NW)
-            resize_zeropad_x[:, :, 0:ZH, 0:ZW] = resize_x
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % multi_times != 0 or PW % multi_times != 0:
+            r_pad = multi_times - (PW % multi_times)
+            b_pad = multi_times - (PH % multi_times)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
         else:
-            resize_zeropad_x = resize_x
+            resize_pad_x = resize_x
 
-        # MS Begin
-        y = self.forward_x(resize_zeropad_x)
-        del resize_zeropad_x, resize_x  # Release memory !!!
+        y = self.base_model(resize_pad_x)
 
-        y = y[:, :, 0:ZH, 0:ZW]  # Remove Zero Pads
-        if ZH != H or ZW != W:
-            y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)
-        # MS End
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
+
+        return y
+
+
+class DefocusModel(nn.Module):
+    def __init__(self):
+        super(DefocusModel, self).__init__()
+        self.base_model = Restormer()
+        self.base_model.load_weights("models/image_defocus.pth")
+
+    def forward(self, x):
+        # Define max GPU/CPU memory -- 8G
+        max_h = 1024
+        max_W = 1024
+        multi_times = 8
+
+        # Need Resize ?
+        B, C, H, W = x.size()
+        if H > max_h or W > max_W:
+            s = min(max_h / H, max_W / W)
+            SH, SW = int(s * H), int(s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
+        else:
+            resize_x = x
+
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % multi_times != 0 or PW % multi_times != 0:
+            r_pad = multi_times - (PW % multi_times)
+            b_pad = multi_times - (PH % multi_times)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
+        else:
+            resize_pad_x = resize_x
+
+        y = self.base_model(resize_pad_x)
+
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
+
+        return y
+
+
+class DenoiseModel(nn.Module):
+    def __init__(self):
+        super(DenoiseModel, self).__init__()
+        self.base_model = Restormer(LayerNorm_type="BiasFree")
+        self.base_model.load_weights("models/image_denoise.pth")
+
+    def forward(self, x):
+        # Define max GPU/CPU memory -- 8G
+        max_h = 1024
+        max_W = 1024
+        multi_times = 8
+
+        # Need Resize ?
+        B, C, H, W = x.size()
+        if H > max_h or W > max_W:
+            s = min(max_h / H, max_W / W)
+            SH, SW = int(s * H), int(s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
+        else:
+            resize_x = x
+
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % multi_times != 0 or PW % multi_times != 0:
+            r_pad = multi_times - (PW % multi_times)
+            b_pad = multi_times - (PH % multi_times)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
+        else:
+            resize_pad_x = resize_x
+
+        y = self.base_model(resize_pad_x)
+
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
+
+        return y
+
+
+class DerainModel(nn.Module):
+    def __init__(self):
+        super(DerainModel, self).__init__()
+        self.base_model = Restormer()
+        self.base_model.load_weights("models/image_derain.pth")
+
+    def forward(self, x):
+        # Define max GPU/CPU memory -- 8G
+        max_h = 1024
+        max_W = 1024
+        multi_times = 8
+
+        # Need Resize ?
+        B, C, H, W = x.size()
+        if H > max_h or W > max_W:
+            s = min(max_h / H, max_W / W)
+            SH, SW = int(s * H), int(s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
+        else:
+            resize_x = x
+
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % multi_times != 0 or PW % multi_times != 0:
+            r_pad = multi_times - (PW % multi_times)
+            b_pad = multi_times - (PH % multi_times)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
+        else:
+            resize_pad_x = resize_x
+
+        y = self.base_model(resize_pad_x)
+
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
 
         return y

@@ -20,38 +20,30 @@ from . import restormer
 
 import pdb
 
-DERAIN_ZEROPAD_TIMES = 8
 
+def get_tvm_model():
+    """
+    TVM model base on torch.jit.trace, much more orignal than torch.jit.script
+    """
+    model = restormer.Restormer(LayerNorm_type="BiasFree")
+    model.load_weights("models/image_denoise.pth")
+    device = todos.model.get_device()
+    model = model.to(device)
+    model.eval()
+    print(f"Running tvm model model on {device} ...")
 
-def model_forward(model, device, input_tensor, multi_times):
-    # zeropad for model
-    os.system("nvidia-smi | grep python")
-    H, W = input_tensor.size(2), input_tensor.size(3)
-    if H % multi_times != 0 or W % multi_times != 0:
-        input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
-
-    output_tensor = todos.model.forward(model, device, input_tensor)
-
-    os.system("nvidia-smi | grep python")
-
-    return output_tensor[:, :, 0:H, 0:W]
+    return model, device
 
 
 def get_defocus_model():
     """Create model."""
-    model_path = "models/image_defocus.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     device = todos.model.get_device()
-    model = restormer.Restormer()
-    todos.model.load(model, checkpoint, key="params")
+    model = restormer.DefocusModel()
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
     model = torch.jit.script(model)
-
     todos.data.mkdir("output")
     if not os.path.exists("output/image_defocus.torch"):
         model.save("output/image_defocus.torch")
@@ -61,19 +53,13 @@ def get_defocus_model():
 
 def get_denoise_model():
     """Create model."""
-    model_path = "models/image_denoise.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     device = todos.model.get_device()
-    model = restormer.Restormer(LayerNorm_type="BiasFree")
-    todos.model.load(model, checkpoint, key="params")
+    model = restormer.DenoiseModel()  # Restormer(LayerNorm_type="BiasFree")
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
     model = torch.jit.script(model)
-
     todos.data.mkdir("output")
     if not os.path.exists("output/image_denoise.torch"):
         model.save("output/image_denoise.torch")
@@ -83,19 +69,13 @@ def get_denoise_model():
 
 def get_deblur_model():
     """Create model."""
-    model_path = "models/image_deblur.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     device = todos.model.get_device()
-    model = restormer.Restormer()
-    todos.model.load(model, checkpoint, key="params")
+    model = restormer.DeblurModel()  # Restormer()
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
     model = torch.jit.script(model)
-
     todos.data.mkdir("output")
     if not os.path.exists("output/image_deblur.torch"):
         model.save("output/image_deblur.torch")
@@ -105,19 +85,13 @@ def get_deblur_model():
 
 def get_derain_model():
     """Create model."""
-    model_path = "models/image_derain.pth"
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
     device = todos.model.get_device()
-    model = restormer.Restormer()
-    todos.model.load(model, checkpoint, key="params")
+    model = restormer.DerainModel()  # Restormer()
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
     model = torch.jit.script(model)
-
     todos.data.mkdir("output")
     if not os.path.exists("output/image_derain.torch"):
         model.save("output/image_derain.torch")
