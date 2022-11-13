@@ -342,18 +342,15 @@ class Restormer(nn.Module):
             state = state["params"]
         self.load_state_dict(state)
 
-    def forward(self, inp_img):
-        x = self.patch_embed(inp_img)
-        out_enc_level1 = self.encoder_level1(x)
-        print("out_enc_level1.size(): ", out_enc_level1.size())
+    def forward(self, input_tensor):
+        x = self.patch_embed(input_tensor)
+        out_enc_level1 = self.encoder_level1(x) # [1, 48, 1024, 1024]
 
         x = self.down1_2(out_enc_level1)
-        out_enc_level2 = self.encoder_level2(x)
-        print("out_enc_level2.size(): ", out_enc_level2.size())
+        out_enc_level2 = self.encoder_level2(x) # [1, 96, 512, 512]
 
         x = self.down2_3(out_enc_level2)
-        out_enc_level3 = self.encoder_level3(x)
-        print("out_enc_level3.size(): ", out_enc_level3.size())
+        out_enc_level3 = self.encoder_level3(x) # [1, 192, 254, 256]
 
         x = self.down3_4(out_enc_level3)
         x = self.latent(x)
@@ -373,6 +370,6 @@ class Restormer(nn.Module):
         out_dec_level1 = self.decoder_level1(x)
 
         out_dec_level1 = self.refinement(out_dec_level1)
-        out_dec_level1 = self.output(out_dec_level1) + inp_img
+        out_dec_level1 = self.output(out_dec_level1) + input_tensor
 
         return out_dec_level1.clamp(0.0, 1.0)

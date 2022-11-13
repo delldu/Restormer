@@ -23,7 +23,7 @@ if __name__ == "__main__":
     model, device = image_clean.get_denoise_model()
 
     N = 10
-    B, C, H, W = 1, 3, 1024, 1024
+    B, C, H, W = 1, 3, model.max_h, model.max_w
 
     mean_time = 0
     progress_bar = tqdm(total=N)
