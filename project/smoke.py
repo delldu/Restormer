@@ -22,7 +22,7 @@ from tqdm import tqdm
 if __name__ == "__main__":
     model, device = image_clean.get_denoise_model()
 
-    N = 100
+    N = 10
     B, C, H, W = 1, 3, 1024, 1024
 
     mean_time = 0
@@ -35,10 +35,7 @@ if __name__ == "__main__":
         x = torch.randn(B, C, H + h, W + w)
         # print("x: ", x.size())
         start_time = time.time()
-        with torch.jit.optimized_execution(False):
-            with torch.no_grad():
-                y = model(x.to(device))
-        torch.cuda.synchronize()
+        y = model(x.to(device))
         mean_time += time.time() - start_time
 
     mean_time /= N

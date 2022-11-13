@@ -9,8 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numbers
-
-# from einops import rearrange
 from einops.layers.torch import Rearrange
 
 
@@ -97,8 +95,7 @@ class FeedForward(nn.Module):
         x = self.project_in(x)
         x1, x2 = self.dwconv(x).chunk(2, dim=1)
         x = F.gelu(x1) * x2
-        x = self.project_out(x)
-        return x
+        return self.project_out(x)
 
 
 ##########################################################################
@@ -160,9 +157,7 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
         x = x + self.attn(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
-
-        return x
+        return x + self.ffn(self.norm2(x))
 
 
 ##########################################################################
@@ -219,9 +214,9 @@ class Restormer(nn.Module):
         LayerNorm_type="WithBias",  ## Other option 'BiasFree'
     ):
         super(Restormer, self).__init__()
-        # Define max GPU/CPU memory -- 4G (512x512), 7G(640x640)
-        self.MAX_H = 640
-        self.MAX_W = 640
+        # Define max GPU/CPU memory -- 4G (512x512), 7G(640x640), 10G(1024x1024)
+        self.MAX_H = 1024
+        self.MAX_W = 1024
         self.MAX_TIMES = 8
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
@@ -350,12 +345,15 @@ class Restormer(nn.Module):
     def forward(self, inp_img):
         x = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(x)
+        print("out_enc_level1.size(): ", out_enc_level1.size())
 
         x = self.down1_2(out_enc_level1)
         out_enc_level2 = self.encoder_level2(x)
+        print("out_enc_level2.size(): ", out_enc_level2.size())
 
         x = self.down2_3(out_enc_level2)
         out_enc_level3 = self.encoder_level3(x)
+        print("out_enc_level3.size(): ", out_enc_level3.size())
 
         x = self.down3_4(out_enc_level3)
         x = self.latent(x)
@@ -378,142 +376,3 @@ class Restormer(nn.Module):
         out_dec_level1 = self.output(out_dec_level1) + inp_img
 
         return out_dec_level1.clamp(0.0, 1.0)
-
-
-class DeblurModel(nn.Module):
-    def __init__(self):
-        super(DeblurModel, self).__init__()
-        self.backbone = Restormer() #.eval()
-
-        self.backbone.load_weights("models/image_deblur.pth")
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.backbone.MAX_H or W > self.backbone.MAX_W:
-            s = min(self.backbone.MAX_H / H, self.backbone.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.backbone.MAX_TIMES != 0 or PW % self.backbone.MAX_TIMES != 0:
-            r_pad = self.backbone.MAX_TIMES - (PW % self.backbone.MAX_TIMES)
-            b_pad = self.backbone.MAX_TIMES - (PH % self.backbone.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        with torch.no_grad():
-            y = self.backbone(resize_pad_x).cpu()
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y
-
-
-class DefocusModel(nn.Module):
-    def __init__(self):
-        super(DefocusModel, self).__init__()
-        self.backbone = Restormer().eval()
-        self.backbone.load_weights("models/image_defocus.pth")
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.backbone.MAX_H or W > self.backbone.MAX_W:
-            s = min(self.backbone.MAX_H / H, self.backbone.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.backbone.MAX_TIMES != 0 or PW % self.backbone.MAX_TIMES != 0:
-            r_pad = self.backbone.MAX_TIMES - (PW % self.backbone.MAX_TIMES)
-            b_pad = self.backbone.MAX_TIMES - (PH % self.backbone.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        with torch.no_grad():
-            y = self.backbone(resize_pad_x)
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y
-
-
-class DenoiseModel(nn.Module):
-    def __init__(self):
-        super(DenoiseModel, self).__init__()
-        self.backbone = Restormer(LayerNorm_type="BiasFree").eval()
-
-        self.backbone.load_weights("models/image_denoise.pth")
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.backbone.MAX_H or W > self.backbone.MAX_W:
-            s = min(self.backbone.MAX_H / H, self.backbone.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.backbone.MAX_TIMES != 0 or PW % self.backbone.MAX_TIMES != 0:
-            r_pad = self.backbone.MAX_TIMES - (PW % self.backbone.MAX_TIMES)
-            b_pad = self.backbone.MAX_TIMES - (PH % self.backbone.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        with torch.no_grad():
-            y = self.backbone(resize_pad_x)
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y
-
-
-class DerainModel(nn.Module):
-    def __init__(self):
-        super(DerainModel, self).__init__()
-        self.backbone = Restormer().eval()
-
-        self.backbone.load_weights("models/image_derain.pth")
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.backbone.MAX_H or W > self.backbone.MAX_W:
-            s = min(self.backbone.MAX_H / H, self.backbone.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.backbone.MAX_TIMES != 0 or PW % self.backbone.MAX_TIMES != 0:
-            r_pad = self.backbone.MAX_TIMES - (PW % self.backbone.MAX_TIMES)
-            b_pad = self.backbone.MAX_TIMES - (PH % self.backbone.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        with torch.no_grad():
-            y = self.backbone(resize_pad_x)
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y

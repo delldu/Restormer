@@ -23,7 +23,7 @@ import pdb
 
 def get_tvm_model():
     """
-    TVM model base on torch.jit.trace, much more orignal than torch.jit.script
+    TVM model base on torch.jit.trace
     """
     model = restormer.Restormer(LayerNorm_type="BiasFree")
     model.load_weights("models/image_denoise.pth")
@@ -38,7 +38,10 @@ def get_tvm_model():
 def get_defocus_model():
     """Create model."""
     device = todos.model.get_device()
-    model = restormer.DefocusModel()
+
+    model = restormer.Restormer()
+    model.load_weights("models/image_defocus.pth")
+    model = todos.model.ResizePadModel(model)
     model = model.to(device)
     model.eval()
 
@@ -54,7 +57,9 @@ def get_defocus_model():
 def get_denoise_model():
     """Create model."""
     device = todos.model.get_device()
-    model = restormer.DenoiseModel()  # Restormer(LayerNorm_type="BiasFree")
+    model = restormer.Restormer(LayerNorm_type="BiasFree")
+    model.load_weights("models/image_denoise.pth")
+    model = todos.model.ResizePadModel(model)
     model = model.to(device)
     model.eval()
 
@@ -70,7 +75,9 @@ def get_denoise_model():
 def get_deblur_model():
     """Create model."""
     device = todos.model.get_device()
-    model = restormer.DeblurModel()  # Restormer()
+    model = restormer.Restormer()
+    model.load_weights("models/image_deblur.pth")
+    model = todos.model.ResizePadModel(model)
     model = model.to(device)
     model.eval()
 
@@ -86,6 +93,9 @@ def get_deblur_model():
 def get_derain_model():
     """Create model."""
     device = todos.model.get_device()
+    model = restormer.Restormer()
+    model.load_weights("models/image_derain.pth")
+    model = todos.model.ResizePadModel(model)
     model = restormer.DerainModel()  # Restormer()
     model = model.to(device)
     model.eval()
