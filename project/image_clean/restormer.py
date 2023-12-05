@@ -2,78 +2,77 @@
 ## Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, and Ming-Hsuan Yang
 ## https://arxiv.org/abs/2111.09881
 
-import pdb
 import os
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numbers
+# import numbers
 from einops.layers.torch import Rearrange
-
+import pdb
 
 ##########################################################################
 ## Layer Norm
 class BiasFree_LayerNorm(nn.Module):
     def __init__(self, normalized_shape):
-        super(BiasFree_LayerNorm, self).__init__()
-        if isinstance(normalized_shape, numbers.Integral):
-            normalized_shape = (normalized_shape,)
+        super().__init__()
+
+        normalized_shape = (normalized_shape,)
         normalized_shape = torch.Size(normalized_shape)
 
         assert len(normalized_shape) == 1
 
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.weight = nn.Parameter(torch.ones(normalized_shape), requires_grad=False)
         self.normalized_shape = normalized_shape
 
     def forward(self, x):
-        sigma = x.var(-1, keepdim=True, unbiased=False)
+        sigma = x.var(-1, keepdim=True, unbiased=False) # variance
         return x / torch.sqrt(sigma + 1e-5) * self.weight
 
 
 class WithBias_LayerNorm(nn.Module):
     def __init__(self, normalized_shape):
-        super(WithBias_LayerNorm, self).__init__()
-        if isinstance(normalized_shape, numbers.Integral):
-            normalized_shape = (normalized_shape,)
+        super().__init__()
+        normalized_shape = (normalized_shape,)
         normalized_shape = torch.Size(normalized_shape)
 
         assert len(normalized_shape) == 1
 
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
-        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+        self.weight = nn.Parameter(torch.ones(normalized_shape), requires_grad=False)
+        self.bias = nn.Parameter(torch.zeros(normalized_shape), requires_grad=False)
         self.normalized_shape = normalized_shape
 
     def forward(self, x):
         mu = x.mean(-1, keepdim=True)
-        sigma = x.var(-1, keepdim=True, unbiased=False)
+        sigma = x.var(-1, keepdim=True, unbiased=False) # variance
         return (x - mu) / torch.sqrt(sigma + 1e-5) * self.weight + self.bias
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, dim, LayerNorm_type):
-        super(LayerNorm, self).__init__()
-        if LayerNorm_type == "BiasFree":
+    def __init__(self, dim, layer_norm_type):
+        super().__init__()
+        if layer_norm_type == "BiasFree": # Denoise
             self.body = BiasFree_LayerNorm(dim)
-        else:
+        else:  # Defocus, Deblur, Derain ?
             self.body = WithBias_LayerNorm(dim)
         self.BxCxHxW_BxHWxC = Rearrange("b c h w -> b (h w) c")
         self.BxHWxC_BxCxHW = Rearrange("b hw c -> b c hw")
 
     def forward(self, x):
-        h, w = x.shape[-2:]
-        x = self.BxCxHxW_BxHWxC(x)  # "B C H W -> B (H W) C"
+        B, C, H, W = x.size()
+        x = self.BxCxHxW_BxHWxC(x)  # x.view(B, C, H * W).permute(0, 2, 1), "B C H W -> B (H W) C"
         x = self.body(x)
-        x = self.BxHWxC_BxCxHW(x)  # "B HW C -> B C HW"
+        x = self.BxHWxC_BxCxHW(x) # x.permute(0, 2, 1), "B HW C -> B C HW"
         # ("b (h w) c -> b c h w", h=h, w=w)
-        return x.view(x.shape[0], x.shape[1], h, w)
+
+        return x.view(B, C, H, W)
 
 
 ##########################################################################
 ## Gated-Dconv Feed-Forward Network (GDFN)
 class FeedForward(nn.Module):
     def __init__(self, dim, ffn_expansion_factor, bias):
-        super(FeedForward, self).__init__()
+        super().__init__()
 
         hidden_features = int(dim * ffn_expansion_factor)
 
@@ -102,9 +101,9 @@ class FeedForward(nn.Module):
 ## Multi-DConv Head Transposed Self-Attention (MDTA)
 class Attention(nn.Module):
     def __init__(self, dim, num_heads, bias):
-        super(Attention, self).__init__()
+        super().__init__()
         self.num_heads = num_heads
-        self.temperature = nn.Parameter(torch.ones(num_heads, 1, 1))
+        self.temperature = nn.Parameter(torch.ones(num_heads, 1, 1), requires_grad=False)
 
         self.qkv = nn.Conv2d(dim, dim * 3, kernel_size=1, bias=bias)
         self.qkv_dwconv = nn.Conv2d(dim * 3, dim * 3, kernel_size=3, stride=1, padding=1, groups=dim * 3, bias=bias)
@@ -125,19 +124,22 @@ class Attention(nn.Module):
         # q = rearrange(q, "b (head c) h w -> b head c (h w)", head=self.num_heads)
         # k = rearrange(k, "b (head c) h w -> b head c (h w)", head=self.num_heads)
         # v = rearrange(v, "b (head c) h w -> b head c (h w)", head=self.num_heads)
-        q = self.Q(q)
-        k = self.K(k)
-        v = self.V(v)
 
-        q = F.normalize(q, dim=-1)
-        k = F.normalize(k, dim=-1)
+        q = self.Q(q) # q.view(b, self.num_heads, c//self.num_heads, h * w) ==> [1, 1, 48, 1024000]
+        k = self.K(k) # k.view(b, self.num_heads, c//self.num_heads, h * w)
+        v = self.V(v) # v.view(b, self.num_heads, c//self.num_heads, h * w) #self.V(v)
 
-        attn = (q @ k.transpose(-2, -1)) * self.temperature
-        attn = attn.softmax(dim=-1)
+        q = F.normalize(q, dim=3)
+        k = F.normalize(k, dim=3)
+
+        attn = (q @ k.transpose(2, 3)) * self.temperature
+        attn = attn.softmax(dim=3)
 
         out = attn @ v
 
         # out = rearrange(out, "b head c (h w) -> b (head c) h w", head=self.num_heads, h=h, w=w)
+        # b, n, c, hw = out.size()
+        # out = out.view(b, n * c, h, w) # [1, 2, 48, 262144] ==> [1, 96, 512, 512])
         out = out.reshape(out.shape[0], out.shape[1], out.shape[2], h, w)
         out = self.O(out)
 
@@ -147,39 +149,39 @@ class Attention(nn.Module):
 
 ##########################################################################
 class TransformerBlock(nn.Module):
-    def __init__(self, dim, num_heads, ffn_expansion_factor, bias, LayerNorm_type):
-        super(TransformerBlock, self).__init__()
+    def __init__(self, dim, num_heads, ffn_expansion_factor, bias, layer_norm_type):
+        super().__init__()
 
-        self.norm1 = LayerNorm(dim, LayerNorm_type)
+        self.norm1 = LayerNorm(dim, layer_norm_type)
         self.attn = Attention(dim, num_heads, bias)
-        self.norm2 = LayerNorm(dim, LayerNorm_type)
+        self.norm2 = LayerNorm(dim, layer_norm_type)
         self.ffn = FeedForward(dim, ffn_expansion_factor, bias)
 
     def forward(self, x):
-        x = x + self.attn(self.norm1(x))
-        return x + self.ffn(self.norm2(x))
+        x = x + self.attn(self.norm1(x)) # MDTA
+        return x + self.ffn(self.norm2(x)) #GDFN
 
 
 ##########################################################################
 ## Overlapped image patch embedding with 3x3 Conv
 class OverlapPatchEmbed(nn.Module):
     def __init__(self, in_c=3, embed_dim=48, bias=False):
-        super(OverlapPatchEmbed, self).__init__()
+        super().__init__()
         self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=3, stride=1, padding=1, bias=bias)
 
     def forward(self, x):
-        x = self.proj(x)
-        return x
+        return self.proj(x)
 
 
 ##########################################################################
 ## Resizing modules
 class Downsample(nn.Module):
     def __init__(self, n_feat):
-        super(Downsample, self).__init__()
+        super().__init__()
 
         self.body = nn.Sequential(
-            nn.Conv2d(n_feat, n_feat // 2, kernel_size=3, stride=1, padding=1, bias=False), nn.PixelUnshuffle(2)
+            nn.Conv2d(n_feat, n_feat // 2, kernel_size=3, stride=1, padding=1, bias=False), 
+            nn.PixelUnshuffle(2),
         )
 
     def forward(self, x):
@@ -188,10 +190,11 @@ class Downsample(nn.Module):
 
 class Upsample(nn.Module):
     def __init__(self, n_feat):
-        super(Upsample, self).__init__()
+        super().__init__()
 
         self.body = nn.Sequential(
-            nn.Conv2d(n_feat, n_feat * 2, kernel_size=3, stride=1, padding=1, bias=False), nn.PixelShuffle(2)
+            nn.Conv2d(n_feat, n_feat * 2, kernel_size=3, stride=1, padding=1, bias=False), 
+            nn.PixelShuffle(2),
         )
 
     def forward(self, x):
@@ -199,7 +202,6 @@ class Upsample(nn.Module):
 
 
 ##########################################################################
-##---------- Restormer -----------------------
 class Restormer(nn.Module):
     def __init__(
         self,
@@ -211,13 +213,13 @@ class Restormer(nn.Module):
         heads=[1, 2, 4, 8],
         ffn_expansion_factor=2.66,
         bias=False,
-        LayerNorm_type="WithBias",  ## Other option 'BiasFree'
+        layer_norm_type="WithBias",  # "BiasFree" for denoise
     ):
-        super(Restormer, self).__init__()
-        # Define max GPU/CPU memory -- 4G (512x512), 7G(640x640), 10G(1024x1024)
+        super().__init__()
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 8
+        # GPU half mode -- 8G(1024x1024, 2000ms)
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
         self.encoder_level1 = nn.Sequential(
@@ -227,7 +229,7 @@ class Restormer(nn.Module):
                     num_heads=heads[0],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[0])
             ]
@@ -241,7 +243,7 @@ class Restormer(nn.Module):
                     num_heads=heads[1],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[1])
             ]
@@ -255,7 +257,7 @@ class Restormer(nn.Module):
                     num_heads=heads[2],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[2])
             ]
@@ -269,7 +271,7 @@ class Restormer(nn.Module):
                     num_heads=heads[3],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[3])
             ]
@@ -284,7 +286,7 @@ class Restormer(nn.Module):
                     num_heads=heads[2],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[2])
             ]
@@ -299,7 +301,7 @@ class Restormer(nn.Module):
                     num_heads=heads[1],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[1])
             ]
@@ -313,7 +315,7 @@ class Restormer(nn.Module):
                     num_heads=heads[0],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_blocks[0])
             ]
@@ -326,13 +328,16 @@ class Restormer(nn.Module):
                     num_heads=heads[0],
                     ffn_expansion_factor=ffn_expansion_factor,
                     bias=bias,
-                    LayerNorm_type=LayerNorm_type,
+                    layer_norm_type=layer_norm_type,
                 )
                 for i in range(num_refinement_blocks)
             ]
         )
 
         self.output = nn.Conv2d(int(dim * 2 ** 1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+
+    def on_cuda(self):
+        return self.output.weight.is_cuda
 
     def load_weights(self, model_path):
         cdir = os.path.dirname(__file__)
@@ -342,7 +347,13 @@ class Restormer(nn.Module):
             state = state["params"]
         self.load_state_dict(state)
 
+        self.half().eval()
+
+
     def forward(self, input_tensor):
+        if self.on_cuda():
+            input_tensor = input_tensor.half()
+
         x = self.patch_embed(input_tensor)
         out_enc_level1 = self.encoder_level1(x) # [1, 48, 1024, 1024]
 
@@ -372,4 +383,4 @@ class Restormer(nn.Module):
         out_dec_level1 = self.refinement(out_dec_level1)
         out_dec_level1 = self.output(out_dec_level1) + input_tensor
 
-        return out_dec_level1.clamp(0.0, 1.0)
+        return out_dec_level1.clamp(0.0, 1.0).float()
